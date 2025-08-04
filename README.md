@@ -137,4 +137,4 @@ LazyTea Client 继承了插件版的全部优点，并在此基础上提供了�
 
 <br>
 
-![Star History](https://api.star-history.com/svg?repos=hlfzsi/LazyTea-Client,hlfzsi/nonebot_plugin_lazytea,hlfzsi/nonebot_plugin_lazytea_shell_extension&type=Date)
+![Star History](https://api.star-history.com/svg?repos=hlfzsi/LazyTea-Client,hlfzsi/nonebot_plugin_lazytea&type=Date)
