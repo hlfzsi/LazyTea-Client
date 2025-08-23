@@ -1,6 +1,6 @@
 [project]
 name = "LazyTea"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "LazyTea独立客户端"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -8,13 +8,15 @@ dependencies = [
     "beautifulsoup4>=4.13.3",
     "markdown2>=2.5.3",
     "pyside6>=6.9.1",
-    "ujson>=5.10.0",
     "websockets>=15.0.1",
     "pydantic>=2.0.0",
     "apsw>=3.50.1.0",
     "xxhash>=3.5.0",
     "loguru>=0.7.3",
     "nuitka>=2.7.12",
+    "jinja2>=3.1.6",
+    "portpicker>=1.6.0",
+    "orjson>=3.11.2",
 ]
 
 [[tool.uv.index]]

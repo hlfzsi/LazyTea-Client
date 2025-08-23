@@ -1,6 +1,6 @@
 import os
 
-__version__ = "0.1.0a1"
+__version__ = "0.1.0a2"
 __author__ = "hlfzsi"
 
 os.environ["UIVERSION"] = __version__

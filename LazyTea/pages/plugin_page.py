@@ -1,20 +1,24 @@
 import os
-import ujson
+import webbrowser
+import re
+import base64
+
+import orjson
 from typing import Any, List, Dict, Optional
 from PySide6.QtGui import (QColor, QPixmap,
                            QFontDatabase)
-from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtCore import Qt, QSize, Signal, QByteArray
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
                                QSizePolicy, QMenu, QGraphicsDropShadowEffect, QScrollArea,
                                QGridLayout, QStackedWidget)
-import webbrowser
-import re
+
+from .utils.env import IS_RUN_ALONE
 from .base_page import PageBase
 from .utils.version_check import VersionUtils
 from .utils.subpages.config_page import ConfigEditor
 from .utils.Qcomponents.MessageBox import MessageBoxBuilder, MessageBoxConfig, ButtonConfig
 from .utils.Qcomponents.networkmanager import ReleaseNetworkManager
-from .utils.ui_types.plugins import PluginInfo
+from .utils.ui_types.plugins import PluginInfo, PluginHTML
 from .background.start import name_module
 from .utils.client import talker, ResponsePayload
 from .utils.tealog import logger
@@ -29,6 +33,7 @@ class PluginCard(QFrame):
     """插件卡片"""
     success_signal = Signal(ResponsePayload)
     update_signal = Signal(ResponsePayload)
+    html_success_signal = Signal(ResponsePayload)
 
     def __init__(self, plugin_data: PluginInfo, parent=None):
         super().__init__(parent)
@@ -37,7 +42,8 @@ class PluginCard(QFrame):
         self.icon_pixmap = None
         self.success_signal.connect(self._show_plugin_subpage)
         self.update_signal.connect(self._handle_update)
-        self._load_icon()
+        self.html_success_signal.connect(self._show_plugin_html)
+        self._load_local_icon()
         self._init_style()
         self._init_ui()
         self._init_context_menu()
@@ -62,12 +68,50 @@ class PluginCard(QFrame):
                 logger.warning(f"加载插件 {plugin_name} 时配置页面未找到父控件")
 
         else:
-            talker.send_request("get_plugin_config",
-                                success_signal=self.success_signal, name=self.plugin_data.get("name"))
+            if self.plugin_data["meta"]["html_exists"]:
+                talker.send_request(
+                    "get_plugin_custom_html", timeout=5, success_signal=self.html_success_signal, plugin_name=self.plugin_data.get("name"))
+            else:
+                talker.send_request("get_plugin_config",
+                                    success_signal=self.success_signal, name=self.plugin_data.get("name"))
+
+    def _show_plugin_html(self, response: ResponsePayload):
+        from jinja2 import Environment
+        from .utils.plugin_html import DictLoader
+        from .utils.Qcomponents.light_http import ControllableServer
+        import webbrowser
+
+        data: PluginHTML = response.data
+        template_string = data["html"]
+        is_rendered = data.get("is_rendered", False)
+        plugin_context = data.get("context", {})
+        includes = data.get("includes", {})
+
+        final_html = None
+        port = ControllableServer.get_instance().port
+        ControllableServer.get_instance().start()
+        plugin_name = self.plugin_data.get("name")
+
+        if is_rendered:
+            final_html = template_string
+        else:
+            jinja_env = Environment(loader=DictLoader(includes))
+            template = jinja_env.from_string(template_string)
+            context = {
+                "plugin_name": self.plugin_data.get("name"),
+                "api_base_url": f"http://127.0.0.1:{port}",
+                "version": os.getenv("UIVERSION", "Unknown"),
+                **plugin_context,
+            }
+            final_html = template.render(context)
+        ControllableServer.get_instance().set_path(
+            path=f"/{plugin_name}", html_content=final_html)
+        webbrowser.open_new_tab(
+            f"http://127.0.0.1:{port}/{plugin_name}")
 
     def _show_plugin_subpage(self, response: ResponsePayload):
         schema: Dict[str, Any] = response.data.get("schema")  # type: ignore
-        data: Dict[str, Any] = ujson.loads(
+        data: Dict[str, Any] = orjson.loads(
             response.data.get("data", ""))  # type: ignore
         editor = ConfigEditor(schema, data, self.plugin_data.get("module"))
 
@@ -86,18 +130,21 @@ class PluginCard(QFrame):
         else:
             logger.warning(f"加载插件 {plugin_name} 时配置页面未找到父控件")
 
-    def _load_icon(self):
+    def _load_local_icon(self):
         """加载插件图标"""
-        icon_path = self.plugin_data["meta"].get("icon_abspath")
-        if icon_path and os.path.exists(icon_path):
-            pixmap = QPixmap(icon_path)
-            if not pixmap.isNull():
-                # 缩放到40x40并保持比例
-                self.icon_pixmap = pixmap.scaled(
-                    QSize(40, 40),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation
-                )
+        if not IS_RUN_ALONE and self.plugin_data["meta"].get("icon_abspath"):
+            icon_path = self.plugin_data["meta"].get("icon_abspath")
+            if icon_path and os.path.exists(icon_path):
+                pixmap = QPixmap(icon_path)
+                self._set_icon(pixmap)
+
+    def _set_icon(self, pixmap: QPixmap):
+        if not pixmap.isNull():
+            self.icon_pixmap = pixmap.scaled(
+                QSize(40, 40),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
 
     def _init_style(self):
         self.setMinimumSize(320, 180)
@@ -318,7 +365,7 @@ class PluginCard(QFrame):
         instead_widget = self._has_plugin_widget()
 
         # 仅在插件有配置或提供页面时添加配置菜单项
-        if self.plugin_data["meta"]["config_exist"] or instead_widget:
+        if self.plugin_data["meta"]["config_exists"] or instead_widget or (self.plugin_data["meta"]["ui_support"] and self.plugin_data["meta"]["html_exists"]):
             config_action = menu.addAction("⚙️ 插件配置")
             actions.append((config_action, self._on_config_clicked))
             menu.addSeparator()
@@ -424,6 +471,7 @@ class PluginCard(QFrame):
 class PluginPage(PageBase):
     """插件管理页面"""
     success_signal = Signal(ResponsePayload)
+    internet_icon_success = Signal(ResponsePayload)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -437,6 +485,7 @@ class PluginPage(PageBase):
         self.stack.addWidget(self.main_widget)
         self.theme_color = QColor("#6C5CE7")
         self.success_signal.connect(self._load_plugins)
+        self.internet_icon_success.connect(self._set_internet_icons)
         self._init_ui()
         self._load_fonts()
 
@@ -580,7 +629,12 @@ class PluginPage(PageBase):
             row, col = 0, 0
             max_cols = 2  # 每行最多2个卡片
 
+            _internet_icons = {}  # plugin_name : icon_abspath
+
             for plugin_name, plugin_data in plugins.items():
+                if IS_RUN_ALONE and plugin_data["meta"]["icon_abspath"]:
+                    _internet_icons[plugin_name] = plugin_data["meta"]["icon_abspath"]
+
                 card = PluginCard(plugin_data, self)
                 self.plugin_cards.append(card)
                 self.card_layout.addWidget(card, row, col)
@@ -594,12 +648,33 @@ class PluginPage(PageBase):
                     col = 0
                     row += 1
 
+            keys = list(_internet_icons.keys())
+            paths = list(_internet_icons.values())
+            if keys:
+                talker.send_request("read_files", timeout=15,
+                                    paths=paths, keys=keys, success_signal=self.internet_icon_success)
+
             self.plugin_count.setText(f"已加载 {len(plugins)} 个插件")
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             self.plugin_count.setText("加载失败")
+
+    def _set_internet_icons(self, data: ResponsePayload):
+        internet_icons = data.data
+        for card in self.plugin_cards:
+            if (name := card.plugin_data.get("name")) in internet_icons:
+                base64str = base64.b64decode(internet_icons[name])
+                byte_array = QByteArray(base64str)
+                pixmap = QPixmap()
+                pixmap.loadFromData(byte_array)
+                card._set_icon(pixmap)
+                if card.icon_pixmap:
+                    card.icon_label.setText("")
+                    card.icon_label.setStyleSheet("")
+                    card.icon_label.setPixmap(card.icon_pixmap)
+                logger.debug(f"为插件 {name} 设置远程图标")
 
     def _clear_plugins(self):
         """清除已加载的插件卡片"""
