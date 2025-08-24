@@ -499,78 +499,62 @@ class MainWindow(QWidget):
     def load_decoration_image(self) -> None:
         """加载本地背景装饰图片"""
         try:
-            bg_folder = None
             import importlib.resources
+            image_files = []
 
             try:
-                resource_ref = importlib.resources.files(__package__).joinpath( # type: ignore
-                    "resources").joinpath("bg")
-                with importlib.resources.as_file(resource_ref) as res_path:
-                    if res_path.is_dir():
-                        bg_folder = res_path
+                bg_container = importlib.resources.files(
+                    __package__).joinpath("resources", "bg")
+                if bg_container.is_dir():
+                    for item in bg_container.iterdir():
+                        if item.is_file() and item.name.lower().endswith(('.jpg', '.png', '.jpeg')):
+                            image_files.append(item)
             except Exception as e:
-                logger.debug(f"从 package resources 获取失败: {e}")
+                logger.debug(
+                    f"Could not list resources via importlib.resources: {e}. Will try fallback.")
 
-            if not bg_folder and getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-                res_path = Path(getattr(sys, '_MEIPASS', '')) / "resources" / \
-                    "bg"
-                if res_path.is_dir():
-                    bg_folder = res_path
-
-            if not bg_folder:
-                logger.warning("未找到背景图片文件夹")
-                return
-
-            # 获取所有图片文件
-            image_files = []
-            if hasattr(bg_folder, 'iterdir'): # For Path objects
-                for ext in ['.jpg', '.png', '.jpeg']:
-                    image_files.extend(bg_folder.glob(f"*{ext}"))
-                    image_files.extend(bg_folder.glob(f"*{ext.upper()}"))
-            else: # For Nuitka's resource reader
-                for item in bg_folder.iterdir():
-                    if item.is_file() and item.name.lower().endswith(('.jpg', '.png', '.jpeg')):
-                        image_files.append(item)
+            if not image_files:
+                dev_path = Path(__file__).parent.resolve() / "resources" / "bg"
+                if dev_path.is_dir():
+                    for ext in ['.jpg', '.png', '.jpeg']:
+                        image_files.extend(dev_path.glob(f"*{ext}"))
+                        image_files.extend(dev_path.glob(f"*{ext.upper()}"))
 
             if not image_files:
                 logger.warning("未找到可用的背景图片")
                 return
 
-            # 随机选择一张图片
-            image_path_obj = random.choice(image_files)
-            
+            chosen_image = random.choice(image_files)
             pixmap = QPixmap()
-            with importlib.resources.as_file(image_path_obj) as image_path:
-                pixmap.load(str(image_path))
 
-            if pixmap.isNull():
-                logger.warning(f"无法加载图片: {image_path}")
-                return
+            if isinstance(chosen_image, Path):
+                if not pixmap.load(str(chosen_image)):
+                    logger.warning(f"无法从路径加载图片: {chosen_image}")
+                    return
+            else:
+                with importlib.resources.as_file(chosen_image) as image_path:
+                    if not pixmap.load(str(image_path)):
+                        logger.warning(f"无法从资源加载图片: {image_path}")
+                        return
 
-            # 缩放图片并创建半透明效果
             scaled_pixmap = pixmap.scaled(
                 self.sidebar.width(),
                 self.sidebar.height(),
                 aspectMode=Qt.AspectRatioMode.IgnoreAspectRatio,
                 mode=Qt.TransformationMode.SmoothTransformation
             )
-
             transparent_pixmap = QPixmap(scaled_pixmap.size())
             transparent_pixmap.fill(Qt.GlobalColor.transparent)
-
             painter = QPainter(transparent_pixmap)
             painter.setOpacity(0.72)
             painter.drawPixmap(0, 0, scaled_pixmap)
             painter.end()
-
-            # 设置背景
             self.bg_decoration.setPixmap(transparent_pixmap)
             self.bg_decoration.setGeometry(
                 0, 0,
                 self.sidebar.width(),
                 self.sidebar.height()
             )
-
         except Exception as e:
             logger.error(f"加载背景图片失败: {e}")
 
