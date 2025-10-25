@@ -93,10 +93,10 @@ LazyTea Client 继承了插件版的全部优点，并在此基础上提供了�
    ```
 2. 设置环境: 在`.env`中进行以下基础设置：
    ```dotenv
-   headless = True # 是否禁用LazyTea的nonebot绑定
-   host = 0.0.0.0 # 允许外部IP连接
+   headless = True # 是否禁用LazyTea的本地GUI
+   host = 0.0.0.0 # 允许外部IP连接, 需要注意, 此操作有危险性, 会将您的nonebot向外暴露
    ```
-3. **获取连接信息**: 启动 NoneBot2，连接所需的 `IP`, `PORT` 和 `TOKEN`应当显而易见。
+3. **获取连接信息**: 启动 NoneBot2，连接所需的 `IP`, `PORT` 和 `TOKEN`应当显而易见。`TOKEN`默认为 `疯狂星期四V我50`
 4. **下载并运行客户端**:
    * 前往 [Releases](https://github.com/hlfzsi/LazyTea-Client/releases) 页面下载最新的 `LazyTea.exe` (Windows) 或自行部署本仓库的Python脚本。
    * 运行客户端，在弹出的登录窗口中填入上一步获取的连接信息。
